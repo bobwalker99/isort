@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from datetime import datetime
 from io import BytesIO, TextIOWrapper
@@ -78,6 +79,7 @@ def test_parse_args():
     assert main.parse_args(["--csi"]) == {"combine_straight_imports": True}
     assert main.parse_args(["--combine-straight-imports"]) == {"combine_straight_imports": True}
     assert main.parse_args(["--dont-follow-links"]) == {"follow_links": False}
+    assert main.parse_args(["--overwrite-in-place"]) == {"overwrite_in_place": True}
 
 
 def test_ascii_art(capsys):
@@ -325,7 +327,7 @@ import a
 import b
 """
     )
-    main.main([str(tmpdir), "--skip", "skip.py", "--check"])
+    main.main([str(tmpdir), "--extend-skip", "skip.py", "--check"])
 
     # without filter options passed in should successfully sort files
     main.main([str(python_file), str(should_skip), "--verbose", "--atomic"])
@@ -351,7 +353,26 @@ import b
     assert "Skipped" not in out
     main.main([str(python_file), "--skip-gitignore", "--filter-files"])
     out, error = capsys.readouterr()
-    assert "Skipped" in out
+    assert "Skipped" in out and "has_imports.py" not in out
+
+    tmpdir.join(".gitignore").remove()
+
+    currentdir = os.getcwd()
+    os.chdir(tmpdir)
+
+    tmpdir.join(".gitignore").write("nested_dir/has_imports.py")
+    subpython_file = tmpdir.join("nested_dir/has_imports.py")
+    subpython_file.write(
+        """
+import b
+import a
+"""
+    )
+    main.main([".", "--skip-gitignore", "--filter-files"])
+    out, error = capsys.readouterr()
+    assert "nested_dir/has_imports.py" not in out
+
+    os.chdir(currentdir)
 
     # warnings should be displayed if old flags are used
     with pytest.warns(UserWarning):
@@ -895,6 +916,31 @@ __revision__ = 'יייי'
 
     main.main([str(tmp_file), str(normal_file), "--verbose"])
     out, error = capsys.readouterr()
+
+
+def test_stream_skip_file(tmpdir, capsys):
+    input_with_skip = """
+# isort: skip_file
+import b
+import a
+"""
+    stream_with_skip = as_stream(input_with_skip)
+    main.main(["-"], stdin=stream_with_skip)
+    out, error = capsys.readouterr()
+    assert out == input_with_skip
+
+    input_without_skip = input_with_skip.replace("isort: skip_file", "generic comment")
+    stream_without_skip = as_stream(input_without_skip)
+    main.main(["-"], stdin=stream_without_skip)
+    out, error = capsys.readouterr()
+    assert (
+        out
+        == """
+# generic comment
+import a
+import b
+"""
+    )
 
 
 def test_only_modified_flag(tmpdir, capsys):

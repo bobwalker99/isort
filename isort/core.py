@@ -13,7 +13,8 @@ from .settings import FILE_SKIP_COMMENTS
 
 CIMPORT_IDENTIFIERS = ("cimport ", "cimport*", "from.cimport")
 IMPORT_START_IDENTIFIERS = ("from ", "from.import", "import ", "import*") + CIMPORT_IDENTIFIERS
-COMMENT_INDICATORS = ('"""', "'''", "'", '"', "#")
+DOCSTRING_INDICATORS = ('"""', "'''")
+COMMENT_INDICATORS = DOCSTRING_INDICATORS + ("'", '"', "#")
 CODE_SORT_COMMENTS = (
     "# isort: list",
     "# isort: dict",
@@ -29,6 +30,7 @@ def process(
     input_stream: TextIO,
     output_stream: TextIO,
     extension: str = "py",
+    raise_on_skip: bool = True,
     config: Config = DEFAULT_CONFIG,
 ) -> bool:
     """Parses stream identifying sections of contiguous imports and sorting them
@@ -60,6 +62,7 @@ def process(
     first_import_section: bool = True
     indent: str = ""
     isort_off: bool = False
+    skip_file: bool = False
     code_sorting: Union[bool, str] = False
     code_sorting_section: str = ""
     code_sorting_indent: str = ""
@@ -148,7 +151,10 @@ def process(
 
             for file_skip_comment in FILE_SKIP_COMMENTS:
                 if file_skip_comment in line:
-                    raise FileSkipComment("Passed in content")
+                    if raise_on_skip:
+                        raise FileSkipComment("Passed in content")
+                    isort_off = True
+                    skip_file = True
 
             if not in_quote and stripped_line == "# isort: off":
                 isort_off = True
@@ -194,7 +200,7 @@ def process(
             not_imports = bool(in_quote) or was_in_quote or in_top_comment or isort_off
             if not (in_quote or was_in_quote or in_top_comment):
                 if isort_off:
-                    if stripped_line == "# isort: on":
+                    if not skip_file and stripped_line == "# isort: on":
                         isort_off = False
                 elif stripped_line.endswith("# isort: split"):
                     not_imports = True
@@ -246,9 +252,6 @@ def process(
                 ):
                     import_section += line
                 elif stripped_line.startswith(IMPORT_START_IDENTIFIERS):
-                    did_contain_imports = contains_imports
-                    contains_imports = True
-
                     new_indent = line[: -len(line.lstrip())]
                     import_statement = line
                     stripped_line = line.strip().split("#")[0]
@@ -266,37 +269,47 @@ def process(
                                 stripped_line = line.strip().split("#")[0]
                                 import_statement += line
 
-                    cimport_statement: bool = False
                     if (
-                        import_statement.lstrip().startswith(CIMPORT_IDENTIFIERS)
-                        or " cimport " in import_statement
-                        or " cimport*" in import_statement
-                        or " cimport(" in import_statement
-                        or ".cimport" in import_statement
+                        import_statement.lstrip().startswith("from")
+                        and "import" not in import_statement
                     ):
-                        cimport_statement = True
-
-                    if cimport_statement != cimports or (
-                        new_indent != indent
-                        and import_section
-                        and (not did_contain_imports or len(new_indent) < len(indent))
-                    ):
-                        indent = new_indent
-                        if import_section:
-                            next_cimports = cimport_statement
-                            next_import_section = import_statement
-                            import_statement = ""
-                            not_imports = True
-                            line = ""
-                        else:
-                            cimports = cimport_statement
+                        line = import_statement
+                        not_imports = True
                     else:
-                        if new_indent != indent:
-                            if import_section and did_contain_imports:
-                                import_statement = indent + import_statement.lstrip()
+                        did_contain_imports = contains_imports
+                        contains_imports = True
+
+                        cimport_statement: bool = False
+                        if (
+                            import_statement.lstrip().startswith(CIMPORT_IDENTIFIERS)
+                            or " cimport " in import_statement
+                            or " cimport*" in import_statement
+                            or " cimport(" in import_statement
+                            or ".cimport" in import_statement
+                        ):
+                            cimport_statement = True
+
+                        if cimport_statement != cimports or (
+                            new_indent != indent
+                            and import_section
+                            and (not did_contain_imports or len(new_indent) < len(indent))
+                        ):
+                            indent = new_indent
+                            if import_section:
+                                next_cimports = cimport_statement
+                                next_import_section = import_statement
+                                import_statement = ""
+                                not_imports = True
+                                line = ""
                             else:
-                                indent = new_indent
-                    import_section += import_statement
+                                cimports = cimport_statement
+                        else:
+                            if new_indent != indent:
+                                if import_section and did_contain_imports:
+                                    import_statement = indent + import_statement.lstrip()
+                                else:
+                                    indent = new_indent
+                        import_section += import_statement
                 else:
                     not_imports = True
 
@@ -310,6 +323,7 @@ def process(
                 and not in_quote
                 and not import_section
                 and not line.lstrip().startswith(COMMENT_INDICATORS)
+                and not line.rstrip().endswith(DOCSTRING_INDICATORS)
             ):
                 import_section = line_separator.join(add_imports) + line_separator
                 if end_of_file and index != 0:

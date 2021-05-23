@@ -54,13 +54,26 @@ def sorted_imports(
                 key=lambda key: sorting.module_key(
                     key, config, section_name=section, straight_import=True
                 ),
+                reverse=config.reverse_sort,
             )
 
         from_modules = parsed.imports[section]["from"]
         if not config.only_sections:
             from_modules = sorting.naturally(
-                from_modules, key=lambda key: sorting.module_key(key, config, section_name=section)
+                from_modules,
+                key=lambda key: sorting.module_key(key, config, section_name=section),
+                reverse=config.reverse_sort,
             )
+
+            if config.star_first:
+                star_modules = []
+                other_modules = []
+                for module in from_modules:
+                    if "*" in parsed.imports[section]["from"][module]:
+                        star_modules.append(module)
+                    else:
+                        other_modules.append(module)
+                from_modules = star_modules + other_modules
 
         straight_imports = _with_straight_imports(
             parsed, config, straight_modules, section, remove_imports, import_type
@@ -95,6 +108,7 @@ def sorted_imports(
             new_section_output = sorting.naturally(
                 new_section_output,
                 key=partial(sorting.section_key, config=config),
+                reverse=config.reverse_sort,
             )
 
             # uncollapse comments
@@ -148,43 +162,46 @@ def sorted_imports(
         output_at = parsed.import_index
     formatted_output[output_at:0] = output
 
-    imports_tail = output_at + len(output)
-    while [
-        character.strip() for character in formatted_output[imports_tail : imports_tail + 1]
-    ] == [""]:
-        formatted_output.pop(imports_tail)
+    if output:
+        imports_tail = output_at + len(output)
+        while [
+            character.strip() for character in formatted_output[imports_tail : imports_tail + 1]
+        ] == [""]:
+            formatted_output.pop(imports_tail)
 
-    if len(formatted_output) > imports_tail:
-        next_construct = ""
-        tail = formatted_output[imports_tail:]
+        if len(formatted_output) > imports_tail:
+            next_construct = ""
+            tail = formatted_output[imports_tail:]
 
-        for index, line in enumerate(tail):
-            should_skip, in_quote, *_ = parse.skip_line(
-                line,
-                in_quote="",
-                index=len(formatted_output),
-                section_comments=config.section_comments,
-                needs_import=False,
-            )
-            if not should_skip and line.strip():
-                if (
-                    line.strip().startswith("#")
-                    and len(tail) > (index + 1)
-                    and tail[index + 1].strip()
-                ):
-                    continue
-                next_construct = line
-                break
-            if in_quote:
-                next_construct = line
-                break
+            for index, line in enumerate(tail):
+                should_skip, in_quote, *_ = parse.skip_line(
+                    line,
+                    in_quote="",
+                    index=len(formatted_output),
+                    section_comments=config.section_comments,
+                    needs_import=False,
+                )
+                if not should_skip and line.strip():
+                    if (
+                        line.strip().startswith("#")
+                        and len(tail) > (index + 1)
+                        and tail[index + 1].strip()
+                    ):
+                        continue
+                    next_construct = line
+                    break
+                if in_quote:
+                    next_construct = line
+                    break
 
-        if config.lines_after_imports != -1:
-            formatted_output[imports_tail:0] = ["" for line in range(config.lines_after_imports)]
-        elif extension != "pyi" and next_construct.startswith(STATEMENT_DECLARATIONS):
-            formatted_output[imports_tail:0] = ["", ""]
-        else:
-            formatted_output[imports_tail:0] = [""]
+            if config.lines_after_imports != -1:
+                formatted_output[imports_tail:0] = [
+                    "" for line in range(config.lines_after_imports)
+                ]
+            elif extension != "pyi" and next_construct.startswith(STATEMENT_DECLARATIONS):
+                formatted_output[imports_tail:0] = ["", ""]
+            else:
+                formatted_output[imports_tail:0] = [""]
 
     if parsed.place_imports:
         new_out_lines = []
@@ -217,20 +234,21 @@ def _with_from_imports(
 
         import_start = f"from {module} {import_type} "
         from_imports = list(parsed.imports[section]["from"][module])
-        if not config.no_inline_sort or (
-            config.force_single_line and module not in config.single_line_exclusions
-        ):
-            if not config.only_sections:
-                from_imports = sorting.naturally(
-                    from_imports,
-                    key=lambda key: sorting.module_key(
-                        key,
-                        config,
-                        True,
-                        config.force_alphabetical_sort_within_sections,
-                        section_name=section,
-                    ),
-                )
+        if (
+            not config.no_inline_sort
+            or (config.force_single_line and module not in config.single_line_exclusions)
+        ) and not config.only_sections:
+            from_imports = sorting.naturally(
+                from_imports,
+                key=lambda key: sorting.module_key(
+                    key,
+                    config,
+                    True,
+                    config.force_alphabetical_sort_within_sections,
+                    section_name=section,
+                ),
+                reverse=config.reverse_sort,
+            )
         if remove_imports:
             from_imports = [
                 line for line in from_imports if f"{module}.{line}" not in remove_imports
@@ -412,18 +430,22 @@ def _with_from_imports(
                         parsed.categorized_comments["nested"].get(module, {}).pop(from_import, None)
                     )
                     if comment:
+                        from_imports.remove(from_import)
+                        if from_imports:
+                            use_comments = []
+                        else:
+                            use_comments = comments
+                            comments = None
                         single_import_line = with_comments(
-                            comments,
+                            use_comments,
                             import_start + from_import,
                             removed=config.ignore_comments,
                             comment_prefix=config.comment_prefix,
                         )
                         single_import_line += (
-                            f"{comments and ';' or config.comment_prefix} " f"{comment}"
+                            f"{use_comments and ';' or config.comment_prefix} " f"{comment}"
                         )
                         output.append(wrap.line(single_import_line, parsed.line_separator, config))
-                        from_imports.remove(from_import)
-                        comments = None
 
                 from_import_section = []
                 while from_imports and (
@@ -483,7 +505,13 @@ def _with_from_imports(
                             config=config,
                             multi_line_output=wrap.Modes.VERTICAL_GRID,  # type: ignore
                         )
-                        if max(len(x) for x in import_statement.split("\n")) > config.line_length:
+                        if (
+                            max(
+                                len(import_line)
+                                for import_line in import_statement.split(parsed.line_separator)
+                            )
+                            > config.line_length
+                        ):
                             import_statement = other_import_statement
                 if not do_multiline_reformat and len(import_statement) > config.line_length:
                     import_statement = wrap.line(import_statement, parsed.line_separator, config)

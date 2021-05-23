@@ -125,6 +125,7 @@ def sort_stream(
     file_path: Optional[Path] = None,
     disregard_skip: bool = False,
     show_diff: Union[bool, TextIO] = False,
+    raise_on_skip: bool = True,
     **config_kwargs,
 ) -> bool:
     """Sorts any imports within the provided code stream, outputs to the provided output stream.
@@ -150,6 +151,7 @@ def sort_stream(
             config=config,
             file_path=file_path,
             disregard_skip=disregard_skip,
+            raise_on_skip=raise_on_skip,
             **config_kwargs,
         )
         _output_stream.seek(0)
@@ -165,9 +167,8 @@ def sort_stream(
 
     config = _config(path=file_path, config=config, **config_kwargs)
     content_source = str(file_path or "Passed in content")
-    if not disregard_skip:
-        if file_path and config.is_skipped(file_path):
-            raise FileSkipSetting(content_source)
+    if not disregard_skip and file_path and config.is_skipped(file_path):
+        raise FileSkipSetting(content_source)
 
     _internal_output = output_stream
 
@@ -188,6 +189,7 @@ def sort_stream(
             _internal_output,
             extension=extension or (file_path and file_path.suffix.lstrip(".")) or "py",
             config=config,
+            raise_on_skip=raise_on_skip,
         )
     except FileSkipComment:
         raise FileSkipComment(content_source)
@@ -384,7 +386,10 @@ def sort_file(
                                     ):
                                         return False
                             source_file.stream.close()
-                            tmp_file.replace(source_file.path)
+                            if config.overwrite_in_place:
+                                source_file.path.write_bytes(tmp_file.read_bytes())
+                            else:
+                                tmp_file.replace(source_file.path)
                             if not config.quiet:
                                 print(f"Fixing {source_file.path}")
                     finally:
@@ -401,17 +406,16 @@ def sort_file(
                         disregard_skip=disregard_skip,
                         extension=extension,
                     )
-                    if changed:
-                        if show_diff:
-                            source_file.stream.seek(0)
-                            output.seek(0)
-                            show_unified_diff(
-                                file_input=source_file.stream.read(),
-                                file_output=output.read(),
-                                file_path=actual_file_path,
-                                output=None if show_diff is True else cast(TextIO, show_diff),
-                                color_output=config.color_output,
-                            )
+                    if changed and show_diff:
+                        source_file.stream.seek(0)
+                        output.seek(0)
+                        show_unified_diff(
+                            file_input=source_file.stream.read(),
+                            file_output=output.read(),
+                            file_path=actual_file_path,
+                            output=None if show_diff is True else cast(TextIO, show_diff),
+                            color_output=config.color_output,
+                        )
                     source_file.stream.close()
 
         except ExistingSyntaxErrors:
@@ -553,13 +557,12 @@ def find_imports_in_paths(
 def _config(
     path: Optional[Path] = None, config: Config = DEFAULT_CONFIG, **config_kwargs
 ) -> Config:
-    if path:
-        if (
-            config is DEFAULT_CONFIG
-            and "settings_path" not in config_kwargs
-            and "settings_file" not in config_kwargs
-        ):
-            config_kwargs["settings_path"] = path
+    if path and (
+        config is DEFAULT_CONFIG
+        and "settings_path" not in config_kwargs
+        and "settings_file" not in config_kwargs
+    ):
+        config_kwargs["settings_path"] = path
 
     if config_kwargs:
         if config is not DEFAULT_CONFIG:

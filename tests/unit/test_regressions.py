@@ -1568,3 +1568,86 @@ def spam():
         )
         == snippet
     )
+
+
+def test_isort_shouldnt_add_extra_line_float_to_top_issue_1667():
+    assert isort.check_code(
+        """
+import sys
+
+sys.path.insert(1, 'path/containing/something_else/..')
+
+import something_else  # isort:skip
+
+# Some constant
+SOME_CONSTANT = 4
+""",
+        show_diff=True,
+        float_to_top=True,
+    )
+
+
+def test_isort_shouldnt_move_noqa_comment_issue_1594():
+    assert (
+        isort.code(
+            """
+from .test import TestTestTestTestTestTest1  # noqa: F401
+from .test import TestTestTestTestTestTest2, TestTestTestTestTestTest3, """
+            """TestTestTestTestTestTest4, TestTestTestTestTestTest5  # noqa: F401
+""",
+            profile="black",
+        )
+        == """
+from .test import TestTestTestTestTestTest1  # noqa: F401
+from .test import (  # noqa: F401
+    TestTestTestTestTestTest2,
+    TestTestTestTestTestTest3,
+    TestTestTestTestTestTest4,
+    TestTestTestTestTestTest5,
+)
+"""
+    )
+
+
+def test_isort_correctly_handles_unix_vs_linux_newlines_issue_1566():
+    import_statement = (
+        "from impacket.smb3structs import (\n"
+        "SMB2_CREATE, SMB2_FLAGS_DFS_OPERATIONS, SMB2_IL_IMPERSONATION, "
+        "SMB2_OPLOCK_LEVEL_NONE, SMB2Create,"
+        "\nSMB2Create_Response, SMB2Packet)\n"
+    )
+    assert isort.code(import_statement, line_length=120) == isort.code(
+        import_statement.replace("\n", "\r\n"), line_length=120
+    ).replace("\r\n", "\n")
+
+
+def test_isort_treats_src_paths_same_as_from_config_as_cli_issue_1711(tmpdir):
+    assert isort.check_code(
+        """
+import mymodule
+import sqlalchemy
+""",
+        show_diff=True,
+    )
+
+    config_file = tmpdir.join(".isort.cfg")
+    config_file.write(
+        """
+[settings]
+src_paths=
+    api
+"""
+    )
+    api_dir = tmpdir.mkdir("api")
+    api_dir.join("mymodule.py").write("# comment")
+
+    config = isort.settings.Config(str(config_file))
+    assert isort.check_code(
+        """
+import sqlalchemy
+
+import mymodule
+""",
+        show_diff=True,
+        config=config,
+    )

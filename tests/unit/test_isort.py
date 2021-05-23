@@ -13,16 +13,12 @@ from typing import Any, Dict, Iterator, List, Set, Tuple
 
 import py
 import pytest
+import toml
 import isort
 from isort import api, sections, files
 from isort.settings import WrapModes, Config
 from isort.utils import exists_case_sensitive
 from isort.exceptions import FileSkipped, ExistingSyntaxErrors
-
-try:
-    import toml
-except ImportError:
-    toml = None
 
 TEST_DEFAULT_CONFIG = """
 [*.{py,pyi}]
@@ -866,6 +862,41 @@ def test_add_imports() -> None:
     test_output = isort.code(code=test_input, add_imports=["from __future__ import print_function"])
     assert test_output == (
         '"""Module docstring"""\n'
+        "from __future__ import print_function\n"
+        "\n"
+        "\n"
+        "class MyClass(object):\n"
+        "    pass\n"
+    )
+
+    # On a file that has no pre-existing imports and a multiline docstring
+    test_input = (
+        '"""Module docstring\n\nWith a second line\n"""\n' "class MyClass(object):\n    pass\n"
+    )
+    test_output = isort.code(code=test_input, add_imports=["from __future__ import print_function"])
+    assert test_output == (
+        '"""Module docstring\n'
+        "\n"
+        "With a second line\n"
+        '"""\n'
+        "from __future__ import print_function\n"
+        "\n"
+        "\n"
+        "class MyClass(object):\n"
+        "    pass\n"
+    )
+
+    # On a file that has no pre-existing imports and a multiline docstring.
+    # In this example, the closing quotes for the docstring are on the final
+    # line rather than a separate one.
+    test_input = (
+        '"""Module docstring\n\nWith a second line"""\n' "class MyClass(object):\n    pass\n"
+    )
+    test_output = isort.code(code=test_input, add_imports=["from __future__ import print_function"])
+    assert test_output == (
+        '"""Module docstring\n'
+        "\n"
+        'With a second line"""\n'
         "from __future__ import print_function\n"
         "\n"
         "\n"
@@ -2914,6 +2945,74 @@ def test_sort_within_sections_with_force_to_top_issue_473() -> None:
     )
 
 
+def test_force_sort_within_sections_with_relative_imports() -> None:
+    """Test sorting of relative imports with force_sort_within_sections=True"""
+    assert isort.check_code(
+        """import .
+from . import foo
+from .. import a
+from ..alpha.beta import b
+from ..omega import c
+import .apple as bar
+from .mango import baz
+""",
+        show_diff=True,
+        force_sort_within_sections=True,
+    )
+
+
+def test_force_sort_within_sections_with_reverse_relative_imports() -> None:
+    """Test reverse sorting of relative imports with force_sort_within_sections=True"""
+    assert isort.check_code(
+        """import .
+from . import foo
+from .mango import baz
+from ..alpha.beta import b
+from .. import a
+from ..omega import c
+import .apple as bar
+""",
+        show_diff=True,
+        force_sort_within_sections=True,
+        reverse_relative=True,
+    )
+
+
+def test_sort_relative_in_force_sorted_sections_issue_1659() -> None:
+    """Ensure relative imports are sorted within sections"""
+    assert isort.check_code(
+        """from .. import a
+from ..alpha.beta import b
+from ..omega import c
+import .
+from . import foo
+import .apple as bar
+from .mango import baz
+""",
+        show_diff=True,
+        force_sort_within_sections=True,
+        sort_relative_in_force_sorted_sections=True,
+    )
+
+
+def test_reverse_sort_relative_in_force_sorted_sections_issue_1659() -> None:
+    """Ensure reverse ordered relative imports are sorted within sections"""
+    assert isort.check_code(
+        """import .
+from . import foo
+import .apple as bar
+from .mango import baz
+from .. import a
+from ..alpha.beta import b
+from ..omega import c
+""",
+        show_diff=True,
+        force_sort_within_sections=True,
+        sort_relative_in_force_sorted_sections=True,
+        reverse_relative=True,
+    )
+
+
 def test_correct_number_of_new_lines_with_comment_issue_435() -> None:
     """Test to ensure that injecting a comment in-between imports
     doesn't mess up the new line spacing
@@ -3989,6 +4088,14 @@ def test_isort_keeps_comments_issue_691() -> None:
         "def path(*subdirectories):\n"
         "    return os.path.join(PROJECT_DIR, *subdirectories)\n"
     )
+    assert isort.code(test_input) == expected_output
+
+
+def test_isort_multiline_with_tab_issue_1714() -> None:
+    test_input = "from sys \\ \n" "\timport version\n" "print(version)\n"
+
+    expected_output = "from sys import version\n" "\n" "print(version)\n"
+
     assert isort.code(test_input) == expected_output
 
 

@@ -4,13 +4,29 @@ Changelog
 NOTE: isort follows the [semver](https://semver.org/) versioning standard.
 Find out more about isort's release policy [here](https://pycqa.github.io/isort/docs/major_releases/release_policy/).
 
-### 5.8.0 TBD
+### 5.9.0 TBD
+  - Fixed (https://github.com/PyCQA/isort/pull/1695) added imports being added to doc string in some cases.
+  - Fixed (https://github.com/PyCQA/isort/pull/1714) in rare cases line continuation combined with tabs can output invalid code.
+  - Fixed (https://github.com/PyCQA/isort/pull/1726) isort ignores reverse_sort when force_sort_within_sections is true.
+  - Implemented #1697: Provisional support for PEP 582: skip `__pypackages__` directories by default.
+  - Implemented #1705: More intuitive handling of isort:skip_file comments on streams.
+
+### 5.8.0 March 20th 2021
   - Fixed #1631: as import comments can in some cases be duplicated.
+  - Fixed #1667: extra newline added with float-to-top, after skip, in some cases.
+  - Fixed #1594: incorrect placement of noqa comments with multiple from imports.
+  - Fixed #1566: in some cases different length limits for dos based line endings.
   - Implemented #1648: Export MyPY type hints.
   - Implemented #1641: Identified import statements now return runnable code.
   - Implemented #1661: Added "wemake" profile.
   - Implemented #1669: Parallel (`-j`) now defaults to number of CPU cores if no value is provided.
   - Implemented #1668: Added a safeguard against accidental usage against /.
+  - Implemented #1638 / #1644: Provide a flag `--overwrite-in-place` to ensure same file handle is used after sorting.
+  - Implemented #1684: Added support for extending skips with `--extend-skip` and `--extend-skip-glob`.
+  - Implemented #1688: Auto identification and skipping of some invalid import statements.
+  - Implemented #1645: Ability to reverse the import sorting order.
+  - Implemented #1504: Added ability to push star imports to the top to avoid overriding explicitly defined imports.
+  - Documented #1685: Skip doesn't support plain directory names, but skip_glob does.
 
 ### 5.7.0 December 30th 2020
   - Fixed #1612: In rare circumstances an extra comma is added after import and before comment.

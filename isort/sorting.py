@@ -54,7 +54,11 @@ def module_key(
 def section_key(line: str, config: Config) -> str:
     section = "B"
 
-    if config.reverse_relative and line.startswith("from ."):
+    if (
+        not config.sort_relative_in_force_sorted_sections
+        and config.reverse_relative
+        and line.startswith("from .")
+    ):
         match = re.match(r"^from (\.+)\s*(.*)", line)
         if match:  # pragma: no cover - regex always matches if line starts with "from ."
             line = f"from {' '.join(match.groups())}"
@@ -66,6 +70,9 @@ def section_key(line: str, config: Config) -> str:
     else:
         line = re.sub("^from ", "", line)
         line = re.sub("^import ", "", line)
+    if config.sort_relative_in_force_sorted_sections:
+        sep = " " if config.reverse_relative else "_"
+        line = re.sub(r"^(\.+)", fr"\1{sep}", line)
     if line.split(" ")[0] in config.force_to_top:
         section = "A"
     # * If honor_case_in_force_sorted_sections is true, and case_sensitive and
@@ -89,7 +96,9 @@ def section_key(line: str, config: Config) -> str:
     return f"{section}{len(line) if config.length_sort else ''}{line}"
 
 
-def naturally(to_sort: Iterable[str], key: Optional[Callable[[str], Any]] = None) -> List[str]:
+def naturally(
+    to_sort: Iterable[str], key: Optional[Callable[[str], Any]] = None, reverse: bool = False
+) -> List[str]:
     """Returns a naturally sorted list"""
     if key is None:
         key_callback = _natural_keys
@@ -98,7 +107,7 @@ def naturally(to_sort: Iterable[str], key: Optional[Callable[[str], Any]] = None
         def key_callback(text: str) -> List[Any]:
             return _natural_keys(key(text))  # type: ignore
 
-    return sorted(to_sort, key=key_callback)
+    return sorted(to_sort, key=key_callback, reverse=reverse)
 
 
 def _atoi(text: str) -> Any:

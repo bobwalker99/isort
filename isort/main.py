@@ -208,6 +208,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
     )
     general_group.add_argument(
+        "--overwrite-in-place",
+        help="Tells isort to overwrite in place using the same file handle."
+        "Comes at a performance and memory usage penalty over it's standard "
+        "approach but ensures all file flags and modes stay unchanged.",
+        dest="overwrite_in_place",
+        action="store_true",
+    )
+    general_group.add_argument(
         "--show-config",
         dest="show_config",
         action="store_true",
@@ -303,15 +311,33 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     target_group.add_argument(
         "-s",
         "--skip",
-        help="Files that sort imports should skip over. If you want to skip multiple "
-        "files you should specify twice: --skip file1 --skip file2.",
+        help="Files that isort should skip over. If you want to skip multiple "
+        "files you should specify twice: --skip file1 --skip file2. Values can be "
+        "file names, directory names or file paths. To skip all files in a nested path "
+        "use --skip-glob.",
         dest="skip",
+        action="append",
+    )
+    target_group.add_argument(
+        "--extend-skip",
+        help="Extends --skip to add additional files that isort should skip over. "
+        "If you want to skip multiple "
+        "files you should specify twice: --skip file1 --skip file2. Values can be "
+        "file names, directory names or file paths. To skip all files in a nested path "
+        "use --skip-glob.",
+        dest="extend_skip",
         action="append",
     )
     target_group.add_argument(
         "--sg",
         "--skip-glob",
-        help="Files that sort imports should skip over.",
+        help="Files that isort should skip over.",
+        dest="skip_glob",
+        action="append",
+    )
+    target_group.add_argument(
+        "--extend-skip-glob",
+        help="Additional files that isort should skip over (extending --skip-glob).",
         dest="skip_glob",
         action="append",
     )
@@ -536,6 +562,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reverse order of relative imports.",
     )
+    output_group.add_argument(
+        "--reverse-sort",
+        dest="reverse_sort",
+        action="store_true",
+        help="Reverses the ordering of imports.",
+    )
     inline_args_group.add_argument(
         "--sl",
         "--force-single-line-imports",
@@ -634,6 +666,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         dest="ext_format",
         help="Tells isort to format the given files according to an extensions formatting rules.",
     )
+    output_group.add_argument(
+        "--star-first",
+        help="Forces star imports above others to avoid overriding directly imported variables.",
+        dest="star_first",
+        action="store_true",
+    )
 
     section_group.add_argument(
         "--sd",
@@ -646,8 +684,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--os",
         dest="only_sections",
         action="store_true",
-        help="Causes imports to be sorted only based on their sections like STDLIB,THIRDPARTY etc. "
-        "Imports are unaltered and keep their relative positions within the different sections.",
+        help="Causes imports to be sorted based on their sections like STDLIB,THIRDPARTY etc. "
+        "Within sections, the imports are ordered by their import style and the imports with "
+        "same style maintain their relative positions.",
     )
     section_group.add_argument(
         "--ds",
@@ -679,6 +718,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         dest="honor_case_in_force_sorted_sections",
         help="Honor `--case-sensitive` when `--force-sort-within-sections` is being used. "
         "Without this option set, `--order-by-type` decides module name ordering too.",
+    )
+    section_group.add_argument(
+        "--srss",
+        "--sort-relative-in-force-sorted-sections",
+        action="store_true",
+        dest="sort_relative_in_force_sorted_sections",
+        help="When using `--force-sort-within-sections`, sort relative imports the same "
+        "way as they are sorted when not using that setting.",
     )
     section_group.add_argument(
         "--fass",
@@ -1043,6 +1090,7 @@ def main(argv: Optional[Sequence[str]] = None, stdin: Optional[TextIOWrapper] = 
                 show_diff=show_diff,
                 file_path=file_path,
                 extension=ext_format,
+                raise_on_skip=False,
             )
     elif "/" in file_names and not allow_root:
         printer = create_terminal_printer(color=config.color_output)
@@ -1132,7 +1180,7 @@ def main(argv: Optional[Sequence[str]] = None, stdin: Optional[TextIOWrapper] = 
         if num_skipped and not config.quiet:
             if config.verbose:
                 for was_skipped in skipped:
-                    warn(
+                    print(
                         f"{was_skipped} was skipped as it's listed in 'skip' setting"
                         " or matches a glob in 'skip_glob' setting"
                     )

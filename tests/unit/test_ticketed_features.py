@@ -1008,3 +1008,110 @@ def function():
     import numpy as np
 """
     )
+
+
+def test_isort_auto_detects_and_ignores_invalid_from_imports_issue_1688():
+    """isort should automatically detect and ignore incorrectly written from import statements
+    see: https://github.com/PyCQA/isort/issues/1688
+    """
+    assert (
+        isort.code(
+            """
+from package1 import alright
+from package2 imprt and_its_gone
+from package3 import also_ok
+"""
+        )
+        == """
+from package1 import alright
+
+from package2 imprt and_its_gone
+from package3 import also_ok
+"""
+    )
+
+
+def test_isort_allows_reversing_sort_order_issue_1645():
+    """isort allows reversing the sort order for those who prefer Z or longer imports first.
+    see: https://github.com/PyCQA/isort/issues/1688
+    """
+    assert (
+        isort.code(
+            """
+from xxx import (
+    g,
+    hi,
+    def,
+    abcd,
+)
+""",
+            profile="black",
+            reverse_sort=True,
+            length_sort=True,
+            line_length=20,
+        )
+        == """
+from xxx import (
+    abcd,
+    def,
+    hi,
+    g,
+)
+"""
+    )
+
+
+def test_isort_can_push_star_imports_above_others_issue_1504():
+    """isort should provide a way to push star imports above other imports to avoid explicit
+    imports from being overwritten.
+    see: https://github.com/PyCQA/isort/issues/1504
+    """
+    assert (
+        (
+            isort.code(
+                """
+from ._bar import Any, All, Not
+from ._foo import a, *
+""",
+                star_first=True,
+            )
+        )
+        == """
+from ._foo import *
+from ._foo import a
+from ._bar import All, Any, Not
+"""
+    )
+
+
+def test_isort_can_combine_reverse_sort_with_force_sort_within_sections_issue_1726():
+    """isort should support reversing import order even with force sort within sections turned on.
+    See: https://github.com/PyCQA/isort/issues/1726
+    """
+    assert (
+        isort.code(
+            """
+import blaaa
+from bl4aaaaaaaaaaaaaaaa import r
+import blaaaaaaaaaaaa
+import bla
+import blaaaaaaa
+from bl1aaaaaaaaaaaaaa import this_is_1
+from bl2aaaaaaa import THIIIIIIIIIIIISS_is_2
+from bl3aaaaaa import less
+""",
+            length_sort=True,
+            reverse_sort=True,
+            force_sort_within_sections=True,
+        )
+        == """
+from bl2aaaaaaa import THIIIIIIIIIIIISS_is_2
+from bl1aaaaaaaaaaaaaa import this_is_1
+from bl4aaaaaaaaaaaaaaaa import r
+from bl3aaaaaa import less
+import blaaaaaaaaaaaa
+import blaaaaaaa
+import blaaa
+import bla
+"""
+    )
