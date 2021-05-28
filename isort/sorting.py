@@ -115,4 +115,16 @@ def _atoi(text: str) -> Any:
 
 
 def _natural_keys(text: str) -> List[Any]:
-    return [_atoi(c) for c in re.split(r"(\d+)", text)]
+    """
+    Sort similarly-named packages containing numeric characters in a numerically natural way.
+    """
+    sort_key_list = []
+    tokens = text.split(".")
+    for token in tokens:
+        subtokens = re.split(r"(\d+)", token)
+        for subtoken in subtokens:
+            sort_key_list.append(_atoi(subtoken))
+        if len(subtokens) == 1:
+            # insert a dummy numeral
+            sort_key_list.append(0)
+    return sort_key_list
